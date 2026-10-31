@@ -1,0 +1,52 @@
+{
+  "epoll_baseline": {
+    "rps": 74010.57,
+    "latency_avg_us": 678.71,
+    "latency_stdev_us": 559.6,
+    "latency_max_us": 11550.0,
+    "p50_us": 617.0,
+    "p75_us": 727.0,
+    "p90_us": 845.0,
+    "p99_us": 1450.0
+  },
+  "uring_single_thread": {
+    "rps": 59225.63,
+    "latency_avg_us": 920.0,
+    "latency_stdev_us": 1310.0,
+    "latency_max_us": 31910.0,
+    "p50_us": 801.0,
+    "p75_us": 950.0,
+    "p90_us": 1100.0,
+    "p99_us": 4830.0
+  },
+  "uring_multi_mutex": {
+    "rps": 195862.71,
+    "latency_avg_us": 244.05,
+    "latency_stdev_us": 492.04,
+    "latency_max_us": 31380.0,
+    "p50_us": 175.0,
+    "p75_us": 236.0,
+    "p90_us": 391.0,
+    "p99_us": 1250.0
+  },
+  "uring_multi_lockfree": {
+    "rps": 193470.89,
+    "latency_avg_us": 500.75,
+    "latency_stdev_us": 2370.0,
+    "latency_max_us": 54130.0,
+    "p50_us": 175.0,
+    "p75_us": 233.0,
+    "p90_us": 431.0,
+    "p99_us": 10870.0
+  },
+  "uring_registered_buffers": {
+    "rps": 79438.28,
+    "latency_avg_us": 598.96,
+    "latency_stdev_us": 184.77,
+    "latency_max_us": 11000.0,
+    "p50_us": 602.0,
+    "p75_us": 672.0,
+    "p90_us": 743.0,
+    "p99_us": 890.0
+  }
+}
