@@ -1,122 +1,121 @@
 # UringCore
 
-> **High-Performance Asynchronous Network & Event Engine for Linux in C++20**
->
-> *Engineered to quantify low-level overhead trade-offs between POSIX `epoll` readiness polling and `io_uring` kernel completion queues under high concurrency.*
+**UringCore** is an asynchronous, high-performance C++20 network and event engine engineered on Linux's completion-based `io_uring` kernel subsystem.
+
+Rather than making unsupported zero-overhead claims, UringCore is built as an empirical performance suite designed to quantify the low-level trade-offs between POSIX readiness-based I/O (`epoll`) and completion-based I/O (`io_uring`), mutex synchronization vs. lock-free atomics, and standard memory allocations vs. kernel-registered fixed buffers.
 
 ---
 
-## Technical Overview & Key Highlights
+## 📊 Telemetry & Empirical Benchmarks
 
-`UringCore` is an asynchronous, multi-threaded networking engine built from the ground up for modern Linux systems. Instead of traditional readiness polling (`epoll_wait`), it leverages Linux's completion-based `io_uring` subsystem to eliminate repetitive system call overhead, minimize kernel-to-user context switching, and enforce optimal L1/L2 cache locality across physical CPU cores.
+All 5 engine variants were subjected to benchmark load testing via `wrk` using **4 threads**, **50 concurrent connections**, over **10-second runs** per variant on Linux:
 
-* **High-Throughput Completion Loop:** Achieved **210,429 QPS** vs. **55,606 QPS** on the multi-threaded POSIX `epoll` baseline (**~3.78x throughput gain**).
-* **Ultralow Median Latency:** Reduced median (p50) response latency from **1.730 ms** down to **0.226 ms** (**86.9% latency reduction**).
-* **Hardware Cache-Line Alignment:** Multi-threaded telemetry and synchronization primitives enforce strict 64-byte alignment (`alignas(64)`) to completely eliminate cross-core false sharing and bus locking.
-* **Strict Thread Affinity:** Pinning worker threads to dedicated physical cores via `pthread_setaffinity_np` preserves L1/L2 cache state and eliminates CPU core-hopping under load.
-* **Modern C++20 Architecture:** Built with standard concepts, explicit lock-free atomic orderings (`std::memory_order_acquire` / `release`), zero-copy buffer rings, and robust RAII resource lifetime management.
-
----
-
-## Comprehensive Benchmark Summary
-
-Evaluated using the `wrk` benchmarking harness under equivalent workload conditions (**10,000 requests**, **50 concurrent connections**, **4 pinned worker threads**):
-
-| Performance Metric | POSIX `epoll` Baseline | `UringCore` (io_uring Multi-Worker) | Delta / Speedup |
-| :--- | :--- | :--- | :--- |
-| **Throughput (QPS)** | 55,606.84 req/sec | **210,429.52 req/sec** | **+378.4% (~3.78x gain)** |
-| **p50 Latency (Median)** | 1.730 ms | **0.226 ms** | **-86.9% (7.65x lower)** |
-| **p90 Latency** | 2.320 ms | **0.515 ms** | **-77.8% (4.50x lower)** |
-| **p99 Tail Latency** | 3.100 ms | **3.020 ms** | **-2.6% improvement** |
+| Engine Architecture | Model Variant | Throughput (RPS) | p50 (µs) | p75 (µs) | p90 (µs) | p99 Tail (µs) | Max Latency |
+| :--- | :--- | :---: | :---: | :---: | :---: | :---: | :---: |
+| **`epoll_baseline`** | Standard POSIX `epoll` | 74,010.57 | 617.0 | 727.0 | 845.0 | **1,450.0** | 11.55 ms |
+| **`uring_single_thread`** | Single-Core `io_uring` | 59,225.63 | 801.0 | 950.0 | 1,100.0 | **4,830.0** | 31.91 ms |
+| **`uring_multi_mutex`** | Multi-Thread `io_uring` (Mutex) | **195,862.71** | 175.0 | 236.0 | 391.0 | **1,250.0** | 31.38 ms |
+| **`uring_multi_lockfree`** | Multi-Thread `io_uring` (Lock-Free) | 193,470.89 | 175.0 | 233.0 | 431.0 | **10,870.0** | 54.13 ms |
+| **`uring_registered_buffers`** | Fixed Buffer `io_uring` | 79,438.28 | 602.0 | 672.0 | 743.0 | **890.0** | 11.00 ms |
 
 ---
 
-## Visual Telemetry & Benchmark Plots
+## 📈 Visual Performance Charts
 
-The following visual charts are generated directly from recorded telemetry logs via `generate_charts.py` and stored in `docs/charts/`:
+### 1. Throughput Matrix (Requests / Second)
+![Throughput Benchmark](throughput_benchmark.png)
 
-### Throughput Comparison (QPS)
-![Throughput Comparison](docs/charts/throughput_comparison.png)
-
-### Tail Latency Distribution (p99)
-![Tail Latency Comparison](docs/charts/latency_p99_comparison.png)
+### 2. p99 Tail Latency Profile (Microseconds - Lower is Better)
+![p99 Latency Benchmark](latency_benchmark.png)
 
 ---
 
-## Repository Structure
+## 🔍 Deep Architectural Takeaways
 
-```text
-UringCore/
-├── CMakeLists.txt                # Build configuration and compiler flags
-├── README.md                     # Architecture overview & setup guide
-├── BENCHMARK.md                  # Comprehensive performance telemetry & analysis
-├── include/
-│   ├── core/                     # Abstract engine interfaces & UringEngine
-│   ├── net/                      # Non-blocking Sockets, Connection states & BufferRings
-│   ├── concurrency/              # Core affinity pinning & Lock-Free queues
-│   └── telemetry/                # Cache-line aligned metrics collector & histograms
-├── src/                          # System core implementations & event loops
-├── benchmarks/                   # 5-Variant benchmark executables
-├── tests/unit/                   # Unit test suite (LockFreeQueue, WorkerGroup, etc.)
-├── scripts/                      # Python orchestration, log parsing & Matplotlib chart generation
-└── docs/charts/                  # Generated latency and throughput plot artifacts
-```
+### 1. Multi-Core Scaling & Peak Throughput
+* Multi-worker engines (`uring_multi_mutex` and `uring_multi_lockfree`) scaled throughput dramatically to **~195.8k RPS** and **~193.5k RPS** respectively, proving a **~2.64x speedup** over traditional single-threaded readiness models.
+
+### 2. Fixed Kernel Buffer Registration (`uring_registered_buffers`)
+* Pre-mapping memory buffers into kernel space via `io_uring_register_buffers()` eliminates page-pinning (`get_user_pages`) overhead during I/O operations.
+* Result: Achieved the lowest p99 tail latency across the entire test suite (**890.0 µs**) with minimal variance ($\sigma = 184.77\,\mu\text{s}$).
+
+### 3. Synchronization & Lock-Free Cache Contention
+* While `uring_multi_lockfree` achieved high throughput, single-producer multi-consumer atomic queues experienced cache line invalidation and bouncing under 50 concurrent connection spikes, pushing p99 latency to **10,870.0 µs**. 
+* Under high multi-worker concurrency, standard mutex parking (`uring_multi_mutex`) maintained tighter p99 latency bounds (**1,250.0 µs**).
 
 ---
 
-## The 5-Variant Comparison Matrix
+## 🛠️ Stack & Dependencies
 
-The repository includes explicit target binaries designed to isolate performance bottlenecks across system layers:
-
-1. `posix_baseline` — Standard readiness-based non-blocking multi-threaded POSIX `epoll` server.
-2. `uring_single_thread` — Single-threaded completion-based `io_uring` loop.
-3. `uring_throughput` — Multi-worker pinned `io_uring` engine utilizing thread-safe worker pools.
-4. `concurrency_benchmark` — Performance target evaluating Lock-Free atomic queues vs. Mutex-protected queues.
-5. `echo_server` — Standalone benchmarking utility and diagnostic server.
+* **Language Standard:** C++20 (`-std=c++20`)
+* **Build System:** CMake (v3.25+) & Ninja / Make
+* **Kernel & Core Libraries:** Linux Kernel 5.10+, `liburing-dev` (v2.4+), `pthread`
+* **Automation & Plotting:** Python 3.10+, `matplotlib`
 
 ---
 
-## Quick Start & Build Instructions
+## 🚀 Build & Execution Guide
 
-### Prerequisites
-* **Linux Kernel:** 5.10+ (5.19+ recommended for multishot accept & buffer ring capabilities)
-* **Compiler:** GCC 13+ or Clang 16+ (`-std=c++20`)
-* **Dependencies:** `liburing-dev` (v2.4+), `cmake` (v3.16+), `python3`, `python3-matplotlib`
-
-### 1. Build the Engine & Test Suite
+### 1. Clone & Build C++ Engine Executables
 ```bash
-git clone https://github.com/your-username/UringCore.git
+git clone https://github.com/alienx36/UringCore.git
 cd UringCore
 mkdir -p build && cd build
 cmake ..
 make -j$(nproc)
 ```
 
-### 2. Run All Unit Tests
-```bash
-./test_lock_free_queue
-./test_buffer_ring
-./test_worker_group
-./test_worker_pool
-./test_sanitizer_teardown
-```
+### 2. Run Automated Benchmark & Telemetry Pipeline
+The automated harness launches all 5 variants sequentially, fires `wrk` load generators, parses telemetry into JSON, and renders PNG performance plots:
 
-### 3. Execute Benchmarks & Generate Telemetry Plots
 ```bash
-# Run multi-worker io_uring engine
-./uring_throughput
-
-# Run automated Python benchmark orchestration & plot generation
-python3 ../scripts/run_benchmarks.py
-python3 ../scripts/parse_latency.py ../uring_wrk.log
-python3 ../scripts/generate_charts.py
+python3 ~/UringCore/scripts/run_benchmarks.py
 ```
 
 ---
 
-## Systems Engineering Portfolio Context
+## 📂 Repository Layout
 
-When paired with a disk-bound persistence engine (such as an LSM-Tree Storage Engine), `UringCore` completes a high-performance C++ Systems Portfolio:
+```
+UringCore/
+├── CMakeLists.txt
+├── README.md
+├── BENCHMARK.md
+├── telemetry_summary.json
+├── throughput_benchmark.png
+├── latency_benchmark.png
+├── include/
+│   ├── core/
+│   │   ├── engine_interface.hpp
+│   │   ├── epoll_engine.hpp
+│   │   ├── uring_engine.hpp
+│   │   └── ring_buffer.hpp
+│   ├── net/
+│   │   ├── socket.hpp
+│   │   ├── connection.hpp
+│   │   └── buffer_pool.hpp
+│   ├── concurrency/
+│   │   ├── thread_pool.hpp
+│   │   ├── lock_free_queue.hpp
+│   │   └── cpu_affinity.hpp
+│   └── telemetry/
+│       ├── metrics_collector.hpp
+│       └── latency_histogram.hpp
+├── src/
+│   ├── main.cpp
+│   ├── core/
+│   └── concurrency/
+├── scripts/
+│   ├── run_benchmarks.py
+│   ├── parse_latency.py
+│   └── generate_charts.py
+└── benchmarks/
+    ├── epoll_baseline.cpp
+    ├── uring_single_thread.cpp
+    ├── uring_throughput.cpp
+    ├── uring_multi_lockfree.cpp
+    └── uring_registered_buffers.cpp
+```
 
-* **Disk I/O & Storage Layer:** LSM-Tree, Write-Ahead Logging (WAL), Sparse Indexing, Memtables, SSTables.
-* **Network & Concurrency Layer:** Kernel asynchronous completion queues (`io_uring`), thread affinity pinning, cache-line false sharing mitigation, tail latency profiling.
+---
+*Created as part of the UringCore Systems Architecture and Performance Engineering Project.*
